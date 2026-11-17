@@ -1,0 +1,103 @@
+name: lowcode1117 screenshot audit
+
+on:
+  push:
+    paths:
+      - '.github/workflows/lowcode1117-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Prepare screenshot analysis dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq tesseract-ocr tesseract-ocr-chi-sim
+          python -m pip install --quiet pillow
+      - name: Extract and inventory every screenshot
+        shell: bash
+        run: |
+          python - <<'PY'
+          import zipfile, pathlib, json, re, hashlib, datetime, subprocess, shutil, collections
+          from PIL import Image, ImageOps, ImageDraw, ImageFont
+          root=pathlib.Path("低代码1117")
+          zpath=root/"低代码1117.zip"
+          out=root/"解压截图_11172053"
+          out.mkdir(parents=True, exist_ok=True)
+          entries=[]
+          with zipfile.ZipFile(zpath) as z:
+            for idx,zi in enumerate(z.infolist()):
+              if zi.is_dir(): continue
+              name=zi.filename
+              try:
+                if not zi.flag_bits & 0x800:
+                  name=name.encode("cp437").decode("gbk")
+              except (UnicodeError,LookupError): pass
+              if pathlib.Path(name).suffix.lower() not in (".jpg",".jpeg",".png",".webp",".bmp"): continue
+              data=z.read(zi)
+              file_name=f"{idx:03d}_"+re.sub(r'[^0-9a-zA-Z一-鿿._-]+','_',pathlib.Path(name).name)
+              dest=out/file_name; dest.write_bytes(data)
+              exif_time=None
+              try:
+                with Image.open(dest) as im:
+                  w,h=im.size
+                  e=im.getexif()
+                  exif_time=e.get(36867) or e.get(306)
+                  mime=im.format
+              except Exception:
+                w,h,mime=0,0,"unknown"
+              ocr=''
+              try:
+                p=subprocess.run(["tesseract",str(dest),"stdout","-l","chi_sim+eng","--psm","6"],capture_output=True,text=True,timeout=35)
+                ocr=p.stdout.strip()
+              except Exception: pass
+              labels=[k for k in ("主体门窗","加热设备","循环自控","附属设施","基本情况","建设规格","费用及补贴","建设时间","使用情况","上传图片","上传照片","图片上传") if k in ocr]
+              item=dict(index=idx,filename=file_name,original_name=name,zip_time="%04d-%02d-%02d %02d:%02d:%02d"%zi.date_time,
+                        exif_time=exif_time, sha256=hashlib.sha256(data).hexdigest(),size=len(data),width=w,height=h,
+                        media_type=mime,labels=labels,ocr=ocr)
+              entries.append(item)
+          entries.sort(key=lambda x:(x["zip_time"],x["filename"]))
+          (out/"_截图明细_11172053.json").write_text(json.dumps(entries,ensure_ascii=False,indent=2),encoding="utf-8")
+          lines=["# 低代码1117截图检查清单 11172053","",f"总截图数量：{len(entries)}。顺序先按ZIP中记录的修改时间，再按原文件名；若所有截图ZIP时间一致，不能将其视为操作先后。",""]
+          for i,d in enumerate(entries,1):
+            lines.extend([f"## {i:03d} {d['filename']}","",
+              f"- 原始文件：{d['original_name']}",f"- 压缩包时间：{d['zip_time']}",f"- EXIF拍摄时间：{d['exif_time'] or '无'}",
+              f"- 图像尺寸：{d['width']}×{d['height']}",f"- 匹配标签：{'、'.join(d['labels']) or '未匹配'}","",
+              "OCR仅供辅助核对，不代替图片人工识别：","",'```text',d['ocr'],'```',""])
+          (out/"_OCR核对_11172053.md").write_text("\n".join(lines),encoding="utf-8")
+          font=ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",23)
+          # Per-image contact sheets for visual ordering, 4 portrait thumbnails per sheet
+          for batch_start in range(0,len(entries),4):
+            batch=entries[batch_start:batch_start+4]
+            thumb_w=440; thumb_h=870; sheet=Image.new("RGB",(thumb_w*len(batch),thumb_h+50),"#ffffff")
+            draw=ImageDraw.Draw(sheet)
+            for j,d in enumerate(batch):
+              path=out/d['filename']
+              with Image.open(path) as im:
+                im=ImageOps.exif_transpose(im).convert("RGB")
+                im.thumbnail((thumb_w-20,thumb_h-15))
+                x=j*thumb_w+(thumb_w-im.width)//2
+                y=40+(thumb_h-15-im.height)//2
+                sheet.paste(im,(x,y))
+              draw.text((j*thumb_w+10,8),f"{batch_start+j+1:03d} {d['filename'][:15]}",font=font,fill="black")
+            sheet.save(out/f"_合览_{batch_start//4+1:02d}.jpg",quality=66,optimize=True)
+          print("TOTAL_IMAGES",len(entries))
+          print("TIME_RANGE",entries[0]["zip_time"] if entries else "none",entries[-1]["zip_time"] if entries else "none")
+          PY
+      - name: Commit extracted screenshot index and images
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- '低代码1117/解压截图_11172053'
+          if ! git diff --cached --quiet; then
+            git commit -m "docs: inventory lowcode screenshots and OCR 11172053"
+            git push origin HEAD:main
+          fi
