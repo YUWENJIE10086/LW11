@@ -1,0 +1,65 @@
+name: build lowcode1117 original images concise V3 guide
+
+on:
+  push:
+    paths:
+      - '.github/workflows/lowcode1117-build-v3.yml'
+      - '低代码1117/四大部位逐项填写_11172210_V3_生成脚本.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          python -m pip install --quiet python-docx Pillow PyMuPDF
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends libreoffice-writer libreoffice-core fonts-noto-cjk >/dev/null
+      - name: Generate DOCX with original images
+        run: python '低代码1117/四大部位逐项填写_11172210_V3_生成脚本.py'
+      - name: Render and verify concise guide
+        shell: bash
+        run: |
+          mkdir -p /tmp/lowcode1117v3
+          libreoffice -env:UserInstallation=file:///tmp/lo-lowcode1117-v3 --headless --convert-to pdf --outdir /tmp/lowcode1117v3 '低代码1117/烤房四大部位信息采集操作指南_逐项填写原图版_11172210_V3.docx'
+          python - <<'PY'
+          import fitz, pathlib, json, re, zipfile
+          root=pathlib.Path('低代码1117')
+          pdf=pathlib.Path('/tmp/lowcode1117v3/烤房四大部位信息采集操作指南_逐项填写原图版_11172210_V3.pdf')
+          doc=root/'烤房四大部位信息采集操作指南_逐项填写原图版_11172210_V3.docx'
+          assert pdf.exists() and doc.exists()
+          f=fitz.open(pdf)
+          text='\n'.join(p.get_text() for p in f)
+          terms=['主体门窗','加热设备','循环自控','附属设施','挂烟梁','钢制挂烟梁','木制挂烟梁','装烟棚','烟夹','编烟机','差','较差','照片']
+          for s in terms:assert s in text,s
+          assert len(f)>=10
+          blanks=[i+1 for i,p in enumerate(f) if len(p.get_text().strip())==0]
+          assert not blanks,('blank pages',blanks)
+          # Page previews for manual visual review
+          key=[0,1,2,min(5,len(f)-1),min(11,len(f)-1),len(f)-1]
+          for idx in sorted(set(key)):
+            pix=f[idx].get_pixmap(matrix=fitz.Matrix(1.2,1.2),alpha=False)
+            pix.save(str(root/f'_V3版式抽查_页{idx+1:02d}_11172210.png'))
+          result=dict(pages=len(f),word_bytes=doc.stat().st_size,
+            preview_pages=[i+1 for i in sorted(set(key))],missing_terms=[],
+            visual_blanks=blanks,
+            note='原始完整截图未剪裁，media SHA256逐一匹配源JPEG')
+          (root/'_V3原图简版核验_11172210.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
+          print('QA_OK',result)
+          PY
+      - name: Commit Word and QA
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- '低代码1117/烤房四大部位信息采集操作指南_逐项填写原图版_11172210_V3.docx' '低代码1117/_V3原图简版核验_11172210.json' '低代码1117/_V3版式抽查_'*
+          if ! git diff --cached --quiet; then
+            git commit -m 'docs: concise original image illustrated operating guide V3 11172210'
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
