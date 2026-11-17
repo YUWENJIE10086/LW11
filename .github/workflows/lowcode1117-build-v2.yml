@@ -1,0 +1,62 @@
+name: build lowcode1117 field-by-field V2 guide
+on:
+  push:
+    paths:
+      - ".github/workflows/lowcode1117-build-v2.yml"
+      - "低代码1117/烤房四大部位逐项填写指南_11172125_V2_生成脚本.py"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install document prerequisites
+        run: |
+          python -m pip install --quiet python-docx Pillow PyMuPDF
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends libreoffice-writer libreoffice-core fonts-noto-cjk > /dev/null
+      - name: Generate revised guide
+        run: |
+          python '低代码1117/烤房四大部位逐项填写指南_11172125_V2_生成脚本.py'
+      - name: Render and verify Word
+        shell: bash
+        run: |
+          mkdir -p /tmp/lowcode1117v2
+          libreoffice -env:UserInstallation=file:///tmp/lowcode1117v2lo --headless --convert-to pdf --outdir /tmp/lowcode1117v2 '低代码1117/烤房四大部位信息采集_逐项填写图解指南_11172125_V2.docx'
+          python - <<'PY'
+          from pathlib import Path
+          import fitz,zipfile,json,subprocess
+          root=Path('低代码1117')
+          doc=root/'烤房四大部位信息采集_逐项填写图解指南_11172125_V2.docx'
+          pdf=Path('/tmp/lowcode1117v2/'+doc.stem+'.pdf')
+          assert doc.exists() and pdf.exists()
+          p=fitz.open(pdf)
+          txt='\n'.join(pg.get_text() for pg in p)
+          for word in ('主体门窗','加热设备','循环自控','附属设施','钢制挂烟梁','木制挂烟梁','编烟机','温湿度传感器','差','较差'):
+              assert word in txt,('missing section',word)
+          with zipfile.ZipFile(doc) as z:
+              assert z.testzip() is None
+              imgs=sum(x.startswith("word/media/") for x in z.namelist())
+          assert imgs>=19,imgs
+          assert 10<=len(p)<=45,len(p)
+          for idx in [0,1,min(5,len(p)-1),min(12,len(p)-1),len(p)-1]:
+              pix=p[idx].get_pixmap(matrix=fitz.Matrix(1.25,1.25),alpha=False)
+              pix.save(str(root/f'_V2版式抽查_页{idx+1:02d}_11172125.png'))
+          result={"pages":len(p),"images":imgs,"size_bytes":doc.stat().st_size,
+                  "first_page_text":p[0].get_text()[:250],
+                  "body_sections":[x for x in ['主体门窗','加热设备','循环自控','附属设施'] if x in txt]}
+          (root/'_V2逐项指南生成检查_11172125.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding="utf-8")
+          print(result)
+          PY
+      - name: Commit revised deliverable and QA
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add '低代码1117/烤房四大部位信息采集_逐项填写图解指南_11172125_V2.docx' '低代码1117/_V2逐项指南生成检查_11172125.json' '低代码1117/_V2版式抽查_'*
+          git commit -m "docs: publish concise field-by-field illustrated guide V2 11172125"
+          git pull --rebase origin main
+          git push origin HEAD:main
