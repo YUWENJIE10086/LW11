@@ -49,7 +49,7 @@ def h(txt,level=1):
     p.paragraph_format.space_before=Pt(13 if level==1 else 7)
     p.paragraph_format.space_after=Pt(6)
     p.paragraph_format.keep_with_next=True
-    run(p,txt,bold=True,size=16 if level==1 else 14)
+    run(p,txt,b=True,size=16 if level==1 else 14)
     return p
 def meta(msg):
     p=doc.add_paragraph()
