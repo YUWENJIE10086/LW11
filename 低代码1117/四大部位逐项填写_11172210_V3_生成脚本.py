@@ -90,6 +90,7 @@ def part(title,overview_id,sections,rows):
     doc.add_page_break();h(title,1)
     shot(overview_id,"本入口全部栏目，未逐项展开",16.8)
     detail("栏目总览"," → ".join(sections))
+    doc.add_page_break()
     table(rows)
 def item(title,fields,select,photo=None,ids=()):
     h(title,2)
@@ -103,7 +104,7 @@ top.paragraph_format.space_after=Pt(8)
 f(top,"烤房四大部位信息采集操作指南",True,22,"方正小标宋简体")
 sub=doc.add_paragraph();sub.alignment=WD_ALIGN_PARAGRAPH.CENTER
 f(sub,"（逐项填写·原图版）",sz=14)
-picture(ROOT/"6e408f052c2c854c097659b8a008a62a.jpg","四个入口总页面",15.7)
+picture(ROOT/"6e408f052c2c854c097659b8a008a62a.jpg","四个入口总页面",12.0)
 p("按《烤房项目基础信息录入指南11.13》找到烤房后，依次进入“主体门窗—加热设备—循环自控—附属设施”。先核对“关联项目编号”，再填写每个栏目。")
 detail("共同规则","带*的必填；状态按“正常、损坏、缺失”选；年份按该部件最近实际修复、改造年份选，不照抄截图示例。")
 detail("照片规则","正常拍全景1张；损坏拍全景和损坏细节各1张；11.17页面要求缺失拍安装位置全景1张。没有上传栏的部件不另传。")
@@ -227,7 +228,7 @@ detail("拍照","点“拍照上传”，选“系统相机”或“浏览器相
 shot(38,"拍照上传后选择相机",16)
 detail("提交","每个入口填写结束，核对带*字段和照片后点“提交”，成功后关闭，再进下一个按钮。")
 detail("提醒","9.29说明曾写“缺失无需拍照”，11.17表单顶端已写“缺失设备拍全景1张”，以当前页面和最新通知为准。")
-detail("编号","截图有00138、00144、00147等不同烤房，仅用于演示；实际每一页都要核对“关联项目编号*”。")
+
 
 # Include complete unmodified bytes as media. No crops, transformations or recompression.
 all_hashes={hashlib.sha256((ROOT/"6e408f052c2c854c097659b8a008a62a.jpg").read_bytes()).hexdigest()}
