@@ -1,0 +1,71 @@
+name: lowcode1117 reference document audit
+
+on:
+  push:
+    paths:
+      - '.github/workflows/lowcode1117-reference.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  audit-reference:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq antiword
+          python -m pip install --quiet python-docx
+      - name: Extract exact reference content and formatting
+        shell: bash
+        run: |
+          python - <<'PY'
+          from docx import Document
+          from pathlib import Path
+          import subprocess,json
+          root=Path("低代码1117")
+          original=root/"烤房项目基础信息录入指南11.13_1794919896877.docx"
+          d=Document(original)
+          lines=["# 11.13 版录入指南：全文结构、正文与格式校验","",f"段落数 {len(d.paragraphs)}；图片数 {len(d.inline_shapes)}；表格数 {len(d.tables)}。",""]
+          for i,s in enumerate(d.sections):
+            lines.append(f"页设置 [{i}]: 页面宽 {s.page_width.cm:.2f}cm；高 {s.page_height.cm:.2f}cm；页边距 {s.top_margin.cm if s.top_margin else 0:.2f}/{s.bottom_margin.cm if s.bottom_margin else 0:.2f}/{s.left_margin.cm if s.left_margin else 0:.2f}/{s.right_margin.cm if s.right_margin else 0:.2f}cm")
+          lines+=["","## 常用样式"]
+          for name in ("Normal","Title","Subtitle","Heading 1","Heading 2","Heading 3","正文","标题 1","标题 2"):
+            try:
+              s=d.styles[name];f=s.font
+              lines.append(f"{name}: 中文字号 {f.size.pt if f.size else 'inherit'}；字体 {f.name}；加粗 {f.bold}；段前 {s.paragraph_format.space_before.pt if s.paragraph_format.space_before else 0}；段后 {s.paragraph_format.space_after.pt if s.paragraph_format.space_after else 0}")
+            except KeyError: pass
+          lines+=["","## 原文顺序（段落样式、实际字体及正文）",""]
+          for i,p in enumerate(d.paragraphs):
+            if not p.text.strip(): continue
+            r=next((r for r in p.runs if r.text.strip()),None)
+            font=(r.font.name if r else None) or (p.style.font.name or "")
+            size=(r.font.size.pt if r and r.font.size else None)
+            lines+= [f"{i:03d} [{p.style.name} | {font} | {size or '继承'}pt] {p.text.strip()}"]
+          if d.tables:
+            lines+=["","## 表格内容"]
+            for i,t in enumerate(d.tables):
+              lines += [f"表 {i+1}"]
+              for row in t.rows:
+                lines += [" | ".join(c.text.replace("\n",";") for c in row.cells)]
+          lines+=["","## 9.29 采集说明原文",""]
+          doc=root/"烤房信息采集说明（9.29）_1794920127965.doc"
+          try:
+            p=subprocess.run(["antiword","-m","UTF-8.txt",str(doc)],capture_output=True,text=True,timeout=30)
+            lines.append(p.stdout if p.stdout.strip() else f"antiword err: {p.stderr[:800]}")
+          except Exception as e: lines.append(repr(e))
+          (root/"_参考指南与采集说明拆解_11172053.md").write_text("\n".join(lines),encoding="utf-8")
+          PY
+      - name: Commit reference audit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- '低代码1117/_参考指南与采集说明拆解_11172053.md'
+          if ! git diff --cached --quiet; then
+            git commit -m "docs: extract guidance content and formatting 11172053"
+            git push origin HEAD:main
+          fi
