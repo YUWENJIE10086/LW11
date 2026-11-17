@@ -1,0 +1,61 @@
+name: lowcode1117 illustrated guide layout verification
+
+on:
+  push:
+    paths:
+      - '.github/workflows/lowcode1117-visual-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install renderer
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends libreoffice-writer libreoffice-core fonts-noto-cjk poppler-utils
+          python -m pip install --quiet pymupdf
+      - name: Render and inspect Word layout
+        shell: bash
+        run: |
+          mkdir -p /tmp/lowcode1117qa
+          libreoffice -env:UserInstallation=file:///tmp/lowcode1117qa-lo --headless --convert-to pdf --outdir /tmp/lowcode1117qa '低代码1117/烤房四大部位信息采集详细操作指南_11172053.docx'
+          python - <<'PY'
+          import fitz, pathlib, json
+          d=pathlib.Path("低代码1117")
+          pdf=pathlib.Path("/tmp/lowcode1117qa/烤房四大部位信息采集详细操作指南_11172053.pdf")
+          assert pdf.exists(), "LibreOffice did not produce a PDF"
+          f=fitz.open(pdf)
+          assert len(f)>=20, f"Unexpectedly short: {len(f)}"
+          textlens=[len(p.get_text().strip()) for p in f]
+          blank=[i+1 for i,v in enumerate(textlens) if v==0]
+          previews=[0,1,2,min(9,len(f)-1),len(f)-1]
+          for pidx in sorted(set(previews)):
+            page=f[pidx]
+            pix=page.get_pixmap(matrix=fitz.Matrix(1.1,1.1),alpha=False)
+            pix.save(str(d/f"_指南版式核查_页{pidx+1:02d}_11172053.png"))
+          (d/"_指南版式核查_11172053.md").write_text(
+            "# 低代码四大部位Word指南版式检查\n\n"+
+            f"渲染页数：{len(f)}\n\n"+
+            f"PDF文件大小：{pdf.stat().st_size} bytes\n\n"+
+            f"空文字页：{blank if blank else '未发现'}\n\n"+
+            f"检查页面：{[i+1 for i in sorted(set(previews))]}\n\n"+
+            f"最少可见字符（非空页）：{min((x for x in textlens if x),default=0)}\n",
+            encoding="utf-8")
+          print("PAGES",len(f),"BLANK",blank)
+          PY
+      - name: Commit verification summary and sample previews
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- '低代码1117/_指南版式核查_'*
+          if ! git diff --cached --quiet; then
+            git commit -m "qa: render and inspect lowcode1117 Word guide"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
