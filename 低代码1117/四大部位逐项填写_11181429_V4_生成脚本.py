@@ -112,7 +112,7 @@ def pair(ids,titles,height=12.5):
     doc.add_paragraph().paragraph_format.space_after=Pt(1)
 def part(title,overview_id,sections,rows):
     doc.add_page_break();h(title,1)
-    shot(overview_id,"本入口全部栏目，未逐项展开",16.8)
+    shot(overview_id,"本入口栏目总览",15.6)
     detail("栏目总览"," → ".join(sections))
     doc.add_page_break()
     table(rows)
@@ -123,6 +123,9 @@ def item(title,fields,select,photo=None,ids=()):
     if photo:detail("照片",photo)
     if len(ids)==2:
         pair(ids,[title+"：页面一",title+"：页面二"])
+    elif len(ids)==3:
+        shot(ids[0],title+"：获取当前位置",10.5)
+        pair(ids[1:],["地图定位与重新定位","获取经纬度并回填"],12.5)
     else:
         for i in ids:shot(i,title,13.6)
 
@@ -259,12 +262,14 @@ detail("整房影像","9.29说明要求每座烤房保存带编号的全景照�
 detail("弱网补录","信号不好时先现场拍照、记录烤房编号，由县级统一收集，按11.13指南的异地上传入口及授权流程补录。")
 h("附：其他原始截图及页面对照",1)
 p("以下为同一栏目不同状态或滚轮、定位过程的原图。正文已说明相关填写口径；本附页保留其余截图供核对，不另设填写任务。")
-extra={40:"主体门窗首屏",32:"主体门窗评价下拉",29:"GPS正在获取定位",20:"加热设备另一项目首屏",19:"主体门窗总览",3:"电线设施及多选",1:"其他—基础信息完善",0:"使用状态下拉"}
-remaining=sorted(set(imgs)-set(used),reverse=True)
-for j in range(0,len(remaining),2):
-    a=remaining[j:j+2]
-    if len(a)==2:pair(a,[extra.get(i,imgs[i].name.split("_",1)[1]) for i in a],12.7)
-    else:shot(a[0],extra.get(a[0],imgs[a[0]].name),13)
+extra={40:"主体门窗首屏",32:"主体门窗评价下拉",29:"GPS正在获取定位",20:"加热设备另一项目首屏",19:"主体门窗总览",3:"电线设施及多选",1:"其他—基础信息完善（11.13指南）",0:"使用状态下拉（11.13指南）"}
+remaining=set(imgs)-set(used)
+for group in [[40,32],[29],[20],[3],[1,0]]:
+    a=[i for i in group if i in remaining]
+    if len(a)==2:pair(a,[extra.get(i,imgs[i].name) for i in a],12.7)
+    elif a:shot(a[0],extra.get(a[0],imgs[a[0]].name),13)
+    remaining-=set(a)
+for i in sorted(remaining,reverse=True):shot(i,extra.get(i,imgs[i].name),13)
 assert set(used)==set(imgs)
 
 
