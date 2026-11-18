@@ -1,0 +1,72 @@
+name: build lowcode V4 original illustrated guide
+on:
+  push:
+    paths:
+      - '.github/workflows/lowcode1117-build-v4.yml'
+      - '低代码1117/四大部位逐项填写_11181139_V4_生成脚本.py'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install document and rendering dependencies
+        run: |
+          python -m pip -q install python-docx Pillow PyMuPDF
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends libreoffice-writer fonts-noto-cjk >/dev/null
+      - name: Build complete original-image Word
+        run: python '低代码1117/四大部位逐项填写_11181139_V4_生成脚本.py'
+      - name: Render and inspect page structure
+        run: |
+          mkdir -p /tmp/v4render
+          libreoffice -env:UserInstallation=file:///tmp/lo-v4guide --headless --convert-to pdf --outdir /tmp/v4render '低代码1117/烤房四大部位信息采集操作指南_逐项填写原图完善版_11181139_V4.docx'
+          python - <<'PY'
+          import fitz,json
+          from pathlib import Path
+          from PIL import Image,ImageDraw
+          root=Path('低代码1117')
+          doc=root/'烤房四大部位信息采集操作指南_逐项填写原图完善版_11181139_V4.docx'
+          q=root/'_V4图文核验_11181139_V4.json'
+          data=json.loads(q.read_text())
+          pdf=fitz.open('/tmp/v4render/'+doc.stem+'.pdf')
+          pages=[]
+          for ix,p in enumerate(pdf):
+              text=p.get_text()
+              pix=p.get_pixmap(matrix=fitz.Matrix(1.15,1.15),alpha=False)
+              im=Image.frombytes('RGB',[pix.width,pix.height],pix.samples)
+              pages.append(im)
+          for i in range(0,len(pages),6):
+              bunch=pages[i:i+6]
+              cw,ch=320,470
+              sheet=Image.new('RGB',(cw*3,ch*2),'#eeeeee')
+              d=ImageDraw.Draw(sheet)
+              for j,im in enumerate(bunch):
+                  im=im.copy();im.thumbnail((cw-10,ch-22))
+                  x=(j%3)*cw+(cw-im.width)//2
+                  y=(j//3)*ch+20
+                  sheet.paste(im,(x,y))
+                  d.text(((j%3)*cw+8,(j//3)*ch+4),str(i+j+1),fill='black')
+              sheet.save(root/f'_V4版式核查_{i//6+1:02d}_11181139.png')
+          full='\n'.join(p.get_text() for p in pdf)
+          for s in ['系统相机','浏览器相机','钢制挂烟梁','木制挂烟梁','温湿度传感器','冷风门状态','施工','瑕疵','5—8','编烟机','监控']:
+              assert s in full,('missing',s)
+          page_info=[]
+          for i,p in enumerate(pdf):
+              lines=[x.strip() for x in p.get_text().splitlines() if x.strip()]
+              page_info.append({'page':i+1,'first':lines[0] if lines else '', 'chars':len(p.get_text()),'images':len(p.get_images())})
+          data.update(rendered_pages=len(pdf),page_info=page_info,render_complete=True,contact_sheets=(len(pages)+5)//6)
+          q.write_text(json.dumps(data,ensure_ascii=False,indent=2))
+          print('QA',json.dumps(data,ensure_ascii=False))
+          PY
+      - name: Commit versioned Word and layout review
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- '低代码1117/烤房四大部位信息采集操作指南_逐项填写原图完善版_11181139_V4.docx' '低代码1117/_V4图文核验_11181139_V4.json' '低代码1117/_V4版式核查_'*
+          git commit -m 'docs: publish V4 original image guide with complete screenshot coverage'
+          git pull --rebase origin main
+          git push origin HEAD:main
